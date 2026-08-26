@@ -12,20 +12,38 @@ CACHE = {}
 TTL = 300  # 5 minutes
 
 def fetch_nse_bulk_deals():
-    """Fetch bulk deals directly from NSE API"""
-    url = "https://www.nseindia.com/api/bulk-deals"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Accept-Encoding": "gzip, deflate, br"
-    }
+    """Fetch bulk deals from NSE with browser-like headers"""
     session = requests.Session()
-    # First request to set cookies
-    session.get("https://www.nseindia.com", headers=headers)
-    response = session.get(url, headers=headers)
-    if response.status_code != 200:
-        raise Exception(f"NSE API returned {response.status_code}")
-    return response.json()
+    
+    # Set headers exactly like a real browser
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Referer": "https://www.nseindia.com/",
+        "Origin": "https://www.nseindia.com",
+        "Connection": "keep-alive",
+        "Sec-Fetch-Dest": "empty",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Site": "same-origin",
+    }
+    
+    # First, visit the homepage to set cookies
+    home_resp = session.get("https://www.nseindia.com", headers=headers, timeout=10)
+    if home_resp.status_code != 200:
+        raise Exception("Failed to reach NSE homepage")
+    
+    # Now fetch bulk deals
+    url = "https://www.nseindia.com/api/bulk-deals"
+    resp = session.get(url, headers=headers, timeout=10)
+    
+    if resp.status_code != 200:
+        raise Exception(f"NSE API returned {resp.status_code}")
+    
+    data = resp.json()
+    # The data is a list of dicts
+    return data
 
 def get_data(days: int):
     now = time.time()
@@ -35,15 +53,16 @@ def get_data(days: int):
 
     try:
         raw = fetch_nse_bulk_deals()
-        # raw is a list of dicts
         df = pd.DataFrame(raw)
-        # Filter for mutual fund buyers
+        
+        # Filter for mutual fund buyers (buyerName contains "MUTUAL FUND")
         mf = df[df['buyerName'].str.contains('MUTUAL FUND', case=False, na=False)]
-        # Convert date strings to datetime
+        
+        # Convert date column
         mf['dealDate'] = pd.to_datetime(mf['dealDate'])
-        # Filter by days
         cutoff = datetime.now() - timedelta(days=days)
         mf = mf[mf['dealDate'] >= cutoff]
+        
         # Sort by quantity descending
         mf = mf.sort_values('quantity', ascending=False)
         
