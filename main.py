@@ -9,7 +9,7 @@ app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 CACHE = {}
-TTL = 300  # 5 minutes
+TTL = 300
 
 def get_data(days: int):
     now = time.time()
@@ -18,22 +18,14 @@ def get_data(days: int):
         return cached["data"]
 
     try:
-        # Fetch bulk deals using nselib (this handles cookies and headers internally)
-        deals = capital_market.bulk_deals()
+        deals = capital_market.bulk_deal_data()  # ← Fixed function name
         df = pd.DataFrame(deals)
-        
-        # Filter for mutual fund buyers (buyerName column)
         mf = df[df['buyerName'].str.contains('MUTUAL FUND', case=False, na=False)]
-        
-        # Convert date column
         mf['dealDate'] = pd.to_datetime(mf['dealDate'])
         cutoff = datetime.now() - timedelta(days=days)
         mf = mf[mf['dealDate'] >= cutoff]
-        
-        # Sort by quantity descending
         mf = mf.sort_values('quantity', ascending=False)
-        
-        # Prepare result
+
         result = {
             "status": "success",
             "count": len(mf),
@@ -41,7 +33,6 @@ def get_data(days: int):
             "data": mf[["dealDate", "symbol", "buyerName", "quantity", "dealPrice"]].to_dict("records")
         }
     except Exception as e:
-        # If error, return the stale cache if available, else error
         if cached:
             return cached["data"]
         return {"status": "error", "message": str(e)}
@@ -56,3 +47,7 @@ def get_buys(days: int = Query(30, ge=1, le=90)):
 @app.get("/mf-bulk-buys")
 def get_buys_alt(days: int = Query(30, ge=1, le=90)):
     return get_data(days)
+
+@app.get("/")
+def root():
+    return {"status": "online", "message": "MF Bulk Buys API is running"}
